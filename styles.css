@@ -1,0 +1,34 @@
+body {
+    width: 250px;
+    margin: 5px;
+    border: 5px double #84bd00;
+    border-radius: 10%;
+}
+
+h3 {
+    font-size: 20px;
+}
+
+p {
+    font-size: 14px;
+}
+
+/* main container */
+#container {
+    margin: 20px 15px;
+    font-family: monospace;
+    text-align: center;
+    color: black;
+}
+
+ /* user authentication button */
+#userAuth {
+    padding: 5px 10px;
+    background-color: #ecebe8;
+    font-size: 13px;
+    font-family: monospace;
+}
+
+#userAuth:focus {
+    outline: 0;
+}

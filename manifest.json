@@ -1,0 +1,20 @@
+{	
+	"name": "spot-notes",
+	"version": "0.1",
+	"manifest_version": 2,
+	"browser_action":{
+		"default_popup": "login.html", 
+		"default_title": "Spot Notes!"
+	},
+	"background": {
+		"scripts": [ "background.js"],
+		"persistent": false
+	},
+	"permissions": [
+		"identity",
+		"webNavigation",
+		"alarms",
+		"https://*/*",
+		"http://*/*"
+	]
+}
