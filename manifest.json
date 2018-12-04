@@ -11,10 +11,11 @@
 		"persistent": false
 	},
 	"permissions": [
+		"storage",
 		"identity",
 		"webNavigation",
-		"alarms",
 		"https://*/*",
-		"http://*/*"
+		"https://accounts.spotify.com/*",
+		"https://accounts.spotify.com/authorize/*"
 	]
 }
