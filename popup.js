@@ -23,8 +23,18 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
 
 // USAGE:   initialize Spotify user login on button-click in pop-up
 function initializeLogin(){
-    chrome.runtime.sendMessage({action: 'launchOAuth'});
+
+    if(!hasSignedIn){
+        chrome.runtime.sendMessage({action: 'launchOAuth'});
+        //hasSignedIn = true;       UNCOMMENT ME LATER
+    }else{
+        //hasSignedIn = false;      UNCOMMENT ME LATER
+    }
+
 }
+
+// NOTE: adjust me later to accomodate persistent / refreshable user login status
+var hasSignedIn = false;
 
 let authButton = document.getElementById('userAuth');
 authButton.addEventListener('click', initializeLogin);
