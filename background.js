@@ -9,6 +9,7 @@ chrome.runtime.onInstalled.addListener(function(){
     console.log("you just started the extension! hurray!");
 });
 
+
 // USAGE:   exchanges authorization code for access token in OAuth process 
 function makeXHRPost(authCode, redirectURI){
 
@@ -61,27 +62,26 @@ function authorizeSpotify(){
         interactive: true
     },
 
-    // callback upon authorization flow launch
+    // callback upon authorization request launch
     function(responseUrl){
 
         // handle failed user login
-        if(responseUrl.includes("error")){
+        // NOTE: for some reason, we get an undefined responseURL upon failed 
+        //       user login, instead of an error responseUrl, whut ...
+        if(typeof responseUrl == "undefined"){
             chrome.runtime.sendMessage({status: "unsuccessfulLogin"});
             alert("user login was unsuccessful :(");
+            return;
         }
 
         // exchange authorization code with access token
         let authCode = responseUrl.split("=")[1];
         makeXHRPost(authCode, redirectURI);
 
-        // TODO: 
-        //  - add alarm to schedule periodic checks on followed artists
-        //  - add alarm to schedule periodic access-token refresh
-        //  - handle failed user-login errors properly :)
-
-
+        // TODO: do something here ???
     });
 }
+
 
 // USAGE:   handles message passing from various content scripts
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
@@ -94,5 +94,20 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
 
         default:
             alert("Request [ " + request.action + " ] failed :(");
+    }
+});
+
+
+// USAGE:   handles alarms from various content scripts
+chrome.alarms.onAlarm.addListener(function(alarm){
+    switch(alarm.name){
+
+        case "checkArtists":
+            alert("can check artist releases now !!!");
+            chrome.runtime.sendMessage({status: "checkArtists"});
+            break;
+
+        default:
+            alert("WTF IS THIS ALARM " + alarm.name + " BRO, YOU CRAY?");
     }
 });

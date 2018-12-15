@@ -1,17 +1,28 @@
+
+/**
+ *  - handles pop-up interactions 
+ */
+
 'use strict';
+
+var hasSignedIn = false;
 
 // USAGE:   modifies popup text according to received user-login status
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
     switch(request.status){
 
-        case "sucessfulLogin":
-            notificationT.textContent = "WHOO! Successfully logged-in with Spotify!";
-            authButton.textContent = "Disconnect from Spotify'";
+        case "successfulLogin":
+            notificationText.innerHTML = "WHOO! Successfully logged-in with Spotify!";
+            authButton.innerHTML = "Disconnect from Spotify";
+            hasSignedIn = true;
+            
+            chrome.runtime.sendMessage({status: "canCreateAlarm"});
             break;
 
-        case "unsucessfulLogin":
-            notificationT.textContent = "Hmmm, something happened. Wanna try again?";
-            authButton.textContent = "Reconnect with Spotify";
+        case "unsuccessfulLogin":
+            notificationText.innerHTML = "Hmmm, something happened. Wanna try again?";
+            authButton.innerHTML = "Reconnect with Spotify";
+            hasSignedIn = false;
             break;
 
         default:
@@ -20,23 +31,20 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
 });
 
 
-
 // USAGE:   initialize Spotify user login on button-click in pop-up
 function initializeLogin(){
 
+    // TODO: 
     if(!hasSignedIn){
         chrome.runtime.sendMessage({action: 'launchOAuth'});
-        //hasSignedIn = true;       UNCOMMENT ME LATER
+        
     }else{
-        //hasSignedIn = false;      UNCOMMENT ME LATER
+        
     }
 
 }
 
-// NOTE: adjust me later to accomodate persistent / refreshable user login status
-var hasSignedIn = false;
-
 let authButton = document.getElementById('userAuth');
 authButton.addEventListener('click', initializeLogin);
 
-let notificationT = document.getElementById('notificationText');
+let notificationText = document.getElementById('notificationText');
