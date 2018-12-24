@@ -7,44 +7,41 @@
 
 var hasSignedIn = false;
 
-// USAGE:   modifies popup text according to received user-login status
+// USAGE:   update popup display according to received user-login status
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
     switch(request.status){
 
+        case "hasPreviouslyLoggedIn":
         case "successfulLogin":
-            notificationText.innerHTML = "WHOO! Successfully logged-in with Spotify!";
-            authButton.innerHTML = "Disconnect from Spotify";
+            chrome.browserAction.setPopup({popup: "login_signedin.html"});
+            window.location.href = "login_signedin.html";       // refresh popup
             hasSignedIn = true;
-            
-            chrome.runtime.sendMessage({status: "canCreateAlarm"});
+            chrome.runtime.sendMessage({action: "canCreateAlarm"});
             break;
 
         case "unsuccessfulLogin":
-            notificationText.innerHTML = "Hmmm, something happened. Wanna try again?";
-            authButton.innerHTML = "Reconnect with Spotify";
+            chrome.browserAction.setPopup({popup: "login_signedin_error.html"});
+            window.location.href="login_signedin_error.html";   // refresh popup
             hasSignedIn = false;
             break;
-
+s
         default:
             console.log("WTF is " + request.status + " , bruh ???");
     }
 });
 
 
-// USAGE:   initialize Spotify user login on button-click in pop-up
-function initializeLogin(){
-
-    // TODO: 
-    if(!hasSignedIn){
-        chrome.runtime.sendMessage({action: 'launchOAuth'});
-        
-    }else{
-        
-    }
-
-}
-
-let authButton = document.getElementById('userAuth');
-authButton.addEventListener('click', initializeLogin);
+///////////////////////////////////////////////////////////////////////////////
 
 let notificationText = document.getElementById('notificationText');
+
+let authButton = document.getElementById('userAuth');
+authButton.addEventListener('click', function(){
+    if(!hasSignedIn){
+        chrome.runtime.sendMessage({action: 'launchOAuth'});
+
+    }else{
+        // TODO: disconnect from Spotify, somehow
+
+    }
+});
