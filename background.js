@@ -4,7 +4,6 @@
 const clientID = "fluffy";
 const clientSecret = "fluffy";
 
-
 // USAGE:   reset storage (just in case), upon installation setup
 chrome.runtime.onInstalled.addListener(function(){
     console.log("you just installed the extension! hurray!");
