@@ -1,8 +1,13 @@
 
 'use strict';
 
+<<<<<<< HEAD
 const clientID = "fluffy";
 const clientSecret = "fluffy";
+=======
+const clientID = "6ac1116fc2574cdc8523cd84d29074c1";
+const clientSecret = "1e462635e0f344acb5b274e35b0b22ea";
+>>>>>>> 9914082b07ce835027fde4e99bb6d3cf2c92e2a2
 
 
 // USAGE:   reset storage (just in case), upon installation setup
