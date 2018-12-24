@@ -10,13 +10,13 @@ var spotifyAlarm;
 chrome.runtime.onMessage.addListener(function(request, sender, response){
     switch(request.status){
 
-        case "canCreateAlarm":
+        case "createAlarm":
             console.log("creating spotify alarm now !!!");
             spotifyAlarm = chrome.alarms.create("spot_notes_alarm", 
-                {periodInMinutes: 15});
+                {periodInMinutes: 2});
             break;
 
-        case "checkArtists":
+        case "checkArtistReleases":
             checkArtistReleases();
             break;
 
@@ -25,11 +25,13 @@ chrome.runtime.onMessage.addListener(function(request, sender, response){
     }
 });
 
+
 // USAGE: check all followed artists for new music releases
 // TODO: 
 function checkArtistReleases(){
 
 }
+
 
 // USAGE: create toast notification
 // TODO: 

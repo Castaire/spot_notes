@@ -3,7 +3,7 @@
 	"version": "0.1",
 	"manifest_version": 2,
 	"browser_action":{
-		"default_popup": "login.html", 
+		"default_popup": "login_default.html", 
 		"default_title": "Spot Notes!"
 	},
 	"background": {
@@ -13,8 +13,8 @@
 	"permissions": [
 		"storage",
 		"identity",
-		"webNavigation",
 		"alarms",
+		"activeTab",
 		"https://*/*",
 		"https://accounts.spotify.com/*",
 		"https://accounts.spotify.com/authorize/*"

@@ -1,52 +1,65 @@
 
 'use strict';
 
-const clientID = "fluffy";
-const clientSecret = "floof";
+const clientID = "6ac1116fc2574cdc8523cd84d29074c1";
+const clientSecret = "1e462635e0f344acb5b274e35b0b22ea";
 
-// USAGE:   initial setup
+
+// USAGE:   reset storage (just in case), upon installation setup
 chrome.runtime.onInstalled.addListener(function(){
-    console.log("you just started the extension! hurray!");
+    console.log("you just installed the extension! hurray!");
+    //chrome.storage.local.clear();
 });
 
 
-// USAGE:   exchanges authorization code for access token in OAuth process 
-function makeXHRPost(authCode, redirectURI){
-
-    let xhr = new XMLHttpRequest();
-    xhr.open('POST', 'https://accounts.spotify.com/api/token');
-
-    // set request header 
-    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-    xhr.setRequestHeader('Accept', 'application/json');
-
-    let encodedAuthValue = btoa(clientID + ":" + clientSecret);
-    xhr.setRequestHeader('Authorization', `Basic ${encodedAuthValue}`);
-
-    // set request body
-    let xhrBody = `grant_type=authorization_code` +
-        `&code=${authCode}` +
-        `&redirect_uri=${redirectURI}`;
-
-    // post-processing after finishing XHR request
-    xhr.onload = function(){
-        console.log("finished XHR request !!!");
-
-        if(xhr.status >= 200 && xhr.status < 300){
-            let resp = JSON.parse(xhr.response);
-            chrome.storage.local.set({"xhrResponse" : resp});
-
-            // updating popup text
-            chrome.runtime.sendMessage({status: "successfulLogin"});
-        }
-    }
-
-    xhr.send(xhrBody);
+// USAGE:  loads popup.js into the current tab
+function preloadPopupScript(){
+    return new Promise(function(resolve, reject){
+        chrome.tabs.query({active: true, currentWindow: true}, function(tabs){
+            chrome.tabs.executeScript(tabs[0].id, {file: "popup.js"}, function(){
+                if(chrome.runtime.lastError){
+                    console.log("could not preload popup");
+                    reject(Error("could not preload popup.js :("));
+                }else{
+                    console.log("preloaded popup");
+                    resolve();
+                }
+            });
+        });
+    });
 }
 
 
-// USAGE:   initiates authorization flow
-// RETURNS: authorization code and state (although not supplied in request)
+// USAGE: 
+chrome.runtime.onStartup.addListener(function(){
+    
+    let preloadScript = preloadPopupScript();
+    preloadScript.then(function(){
+        
+        console.log("got back to startup procedure");
+
+        let lastXHRresponse = chrome.storage.local.get("xhrResponse", function(d){
+            if(chrome.runtime.lastError){
+                console.log("could not find past authentication data!");
+                return;
+            }
+
+            // TESTING: 
+            console.log("found storage items");
+            console.log(d);
+
+            chrome.runtime.sendMessage({status: "hasPreviouslyLoggedIn"});
+            checkAccessToken();
+            chrome.runtime.sendMessage({status: "checkArtistReleases"});
+        });
+    });
+});
+
+
+
+
+
+// USAGE:   initiates Spotify authorization flow
 function authorizeSpotify(){
     const scope = "user-follow-read";
     const redirectURI = chrome.identity.getRedirectURL("spotnotes/");
@@ -66,8 +79,8 @@ function authorizeSpotify(){
     function(responseUrl){
 
         // handle failed user login
-        // NOTE: for some reason, we get an undefined responseURL upon failed 
-        //       user login, instead of an error responseUrl, whut ...
+        // WARNING: for some reason, we get an undefined responseURL upon failed 
+        //          user login, instead of an error responseUrl, whut ...
         if(typeof responseUrl == "undefined"){
             chrome.runtime.sendMessage({status: "unsuccessfulLogin"});
             alert("user login was unsuccessful :(");
@@ -76,10 +89,53 @@ function authorizeSpotify(){
 
         // exchange authorization code with access token
         let authCode = responseUrl.split("=")[1];
-        makeXHRPost(authCode, redirectURI);
-
-        // TODO: do something here ???
+        getAccessToken(authCode, redirectURI);
     });
+}
+
+
+
+// USAGE:   exchanges authorization code for access token in OAuth process 
+function getAccessToken(authCode, redirectURI){
+
+    let xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://accounts.spotify.com/api/token');
+
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xhr.setRequestHeader('Accept', 'application/json');
+    let encodedAuthValue = btoa(clientID + ":" + clientSecret);
+    xhr.setRequestHeader('Authorization', `Basic ${encodedAuthValue}`);
+
+    let xhrBody = `grant_type=authorization_code` +
+        `&code=${authCode}` +
+        `&redirect_uri=${redirectURI}`;
+
+    // runs after completing XHR request
+    xhr.onload = function(){
+        console.log("finished XHR request !!!");
+
+        if(xhr.status >= 200 && xhr.status < 300){
+            let resp = JSON.parse(xhr.response);
+            chrome.storage.local.set({"xhrResponse" : resp});
+
+            // updating popup text
+            chrome.runtime.sendMessage({status: "successfulLogin"});
+            
+        }else{
+            // TODO: add moar later ???
+            console.error("invalid XHR request !!!");
+        }
+    }
+
+    xhr.send(xhrBody);
+}
+
+
+// USAGE:   check that the current access token is valid; otherwise refresh
+// TODO:
+function checkAccessToken(){
+    // TESTING: 
+    console.log("checking access tokens");
 }
 
 
@@ -92,22 +148,23 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
             authorizeSpotify();
             break;
 
+        case "canCreateAlarm":
+            alert("creating alarm now");
+            chrome.runtime.sendMessage({status: "createAlarm"});
+            break;
+
         default:
             alert("Request [ " + request.action + " ] failed :(");
     }
 });
 
 
-// USAGE:   handles alarms from various content scripts
+// USAGE:   handles spot_notes alarm to check for new releases
 chrome.alarms.onAlarm.addListener(function(alarm){
-    switch(alarm.name){
-
-        case "checkArtists":
-            alert("can check artist releases now !!!");
-            chrome.runtime.sendMessage({status: "checkArtists"});
-            break;
-
-        default:
-            alert("WTF IS THIS ALARM " + alarm.name + " BRO, YOU CRAY?");
+    if(alarm.name == "spot_notes_alarm"){
+        alert("spot_notes alarm just rang !!!");
+        checkAccessToken();
+        chrome.runtime.sendMessage({status: "checkArtistReleases"});
     }
 });
+
