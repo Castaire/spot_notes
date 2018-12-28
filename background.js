@@ -4,57 +4,46 @@
 const clientID = "fluffy";
 const clientSecret = "fluffy";
 
+
+
 // USAGE:   reset storage (just in case), upon installation setup
 chrome.runtime.onInstalled.addListener(function(){
     console.log("you just installed the extension! hurray!");
-    //chrome.storage.local.clear();
+    chrome.storage.local.clear();
 });
 
 
-// USAGE:  loads popup.js into the current tab
-function preloadPopupScript(){
-    return new Promise(function(resolve, reject){
-        chrome.tabs.query({active: true, currentWindow: true}, function(tabs){
-            chrome.tabs.executeScript(tabs[0].id, {file: "popup.js"}, function(){
-                if(chrome.runtime.lastError){
-                    console.log("could not preload popup");
-                    reject(Error("could not preload popup.js :("));
-                }else{
-                    console.log("preloaded popup");
-                    resolve();
-                }
-            });
-        });
-    });
-}
 
-
-// USAGE: 
+// USAGE:   
 chrome.runtime.onStartup.addListener(function(){
-    
-    let preloadScript = preloadPopupScript();
-    preloadScript.then(function(){
-        
-        console.log("got back to startup procedure");
+    console.log("you just started up the app!");
 
-        let lastXHRresponse = chrome.storage.local.get("xhrResponse", function(d){
-            if(chrome.runtime.lastError){
-                console.log("could not find past authentication data!");
-                return;
-            }
+    chrome.storage.local.get("loginStatus", function(value){
+        if(chrome.runtime.lastError || value != "signedin"){
+            return; // exit callback
+        }
+    });
 
-            // TESTING: 
-            console.log("found storage items");
-            console.log(d);
+    // try to get past authentication details
+    chrome.storage.local.get("xhrResponse", function(value){
 
-            chrome.runtime.sendMessage({status: "hasPreviouslyLoggedIn"});
-            checkAccessToken();
-            chrome.runtime.sendMessage({status: "checkArtistReleases"});
-        });
+        if(chrome.runtime.lastError){
+            console.log("could not find past authentication data!");
+            return;
+        }
+
+        // TESTING: 
+        console.log("found storage items!");
+        console.log(value);
+
+        updateLoginStatusAndPopup("signedin");
+        checkAccessToken(value);
+        // TODO: load 'scheduler.js' then send message to start the check
+
+
+
     });
 });
-
-
 
 
 
@@ -81,7 +70,7 @@ function authorizeSpotify(){
         // WARNING: for some reason, we get an undefined responseURL upon failed 
         //          user login, instead of an error responseUrl, whut ...
         if(typeof responseUrl == "undefined"){
-            chrome.runtime.sendMessage({status: "unsuccessfulLogin"});
+            updateLoginStatusAndPopup("signedin_error");
             alert("user login was unsuccessful :(");
             return;
         }
@@ -116,13 +105,11 @@ function getAccessToken(authCode, redirectURI){
         if(xhr.status >= 200 && xhr.status < 300){
             let resp = JSON.parse(xhr.response);
             chrome.storage.local.set({"xhrResponse" : resp});
+            updateLoginStatusAndPopup("signedin");
 
-            // updating popup text
-            chrome.runtime.sendMessage({status: "successfulLogin"});
-            
         }else{
-            // TODO: add moar later ???
-            console.error("invalid XHR request !!!");
+            console.error("invalid XHR request !!!"); // TODO: add moar later?
+
         }
     }
 
@@ -130,32 +117,20 @@ function getAccessToken(authCode, redirectURI){
 }
 
 
-// USAGE:   check that the current access token is valid; otherwise refresh
-// TODO:
-function checkAccessToken(){
-    // TESTING: 
-    console.log("checking access tokens");
-}
-
 
 // USAGE:   handles message passing from various content scripts
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
-    switch(request.action){
+    if(request.action == "launchOAuth"){
+        alert("just got a launchOAuth message!");
+        authorizeSpotify();
+        break;
 
-        case "launchOAuth":
-            alert("just got a launchOAuth message!");
-            authorizeSpotify();
-            break;
+    }else{
+        alert("Request [ " + request.action + " ] failed :(");
 
-        case "canCreateAlarm":
-            alert("creating alarm now");
-            chrome.runtime.sendMessage({status: "createAlarm"});
-            break;
-
-        default:
-            alert("Request [ " + request.action + " ] failed :(");
     }
 });
+
 
 
 // USAGE:   handles spot_notes alarm to check for new releases
@@ -167,3 +142,30 @@ chrome.alarms.onAlarm.addListener(function(alarm){
     }
 });
 
+
+
+// USAGE:   updates popup and values, based on login status
+function updateLoginStatusAndPopup(status){
+    chrome.storage.local.set({"loginStatus" : status});
+    
+    let popupVersion = "login_" + status + ".html";
+    chrome.browserAction.setPopup({popup : `${popupVersion}`});
+    window.location.href = popupVersion; // update popup version immediately
+}
+
+
+
+// USAGE:   loads and runs script to check for artist releases
+function loadRunScheduler(){
+    // TODO: 
+    print("trying to load and run the scheduler!");
+}
+
+
+
+// USAGE:   check that the current access token is valid; otherwise refresh
+// TODO:
+function checkAccessToken(obj){
+    // TESTING: 
+    console.log("checking access tokens");
+}
