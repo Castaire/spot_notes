@@ -66,10 +66,7 @@ function authorizeSpotify(){
     // callback upon authorization request launch
     function(responseUrl){
 
-        // handle failed user login
-        // WARNING: for some reason, we get an undefined responseURL upon failed 
-        //          user login, instead of an error responseUrl, whut ...
-        if(typeof responseUrl == "undefined"){
+        if(chrome.runtime.lastError){
             updateLoginStatusAndPopup("signedin_error");
             alert("user login was unsuccessful :(");
             return;
@@ -123,7 +120,6 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
     if(request.action == "launchOAuth"){
         alert("just got a launchOAuth message!");
         authorizeSpotify();
-        break;
 
     }else{
         alert("Request [ " + request.action + " ] failed :(");
@@ -150,7 +146,8 @@ function updateLoginStatusAndPopup(status){
     
     let popupVersion = "login_" + status + ".html";
     chrome.browserAction.setPopup({popup : `${popupVersion}`});
-    window.location.href = popupVersion; // update popup version immediately
+    
+    // TODO:    immediately refresh popup, ughhhhhhhhhh X . X kill me
 }
 
 

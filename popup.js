@@ -13,7 +13,7 @@ authButton.addEventListener('click', function(){
     chrome.storage.local.get("loginStatus", function(value){
 
         if(chrome.runtime.lastError || value != "signedin"){
-            chrome.runtime.sendMessage({action: 'launchOAth'});
+            chrome.runtime.sendMessage({action: 'launchOAuth'});
         };
 
         // TODO: maybe do something so the user can log out? O.O
