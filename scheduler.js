@@ -5,30 +5,13 @@
 
 'use strict';
 
-var spotifyAlarm;
-
-chrome.runtime.onMessage.addListener(function(request, sender, response){
-    switch(request.status){
-
-        case "createAlarm":
-            console.log("creating spotify alarm now !!!");
-            spotifyAlarm = chrome.alarms.create("spot_notes_alarm", 
-                {periodInMinutes: 2});
-            break;
-
-        case "checkArtistReleases":
-            checkArtistReleases();
-            break;
-
-        default:
-            console.log("WTF IS THIS MESSAGE : " + request.status);
-    }
-});
-
 
 // USAGE: check all followed artists for new music releases
 // TODO: 
 function checkArtistReleases(){
+
+    console.log("trying to check artist releases =w=");
+    
 
 }
 
@@ -36,5 +19,5 @@ function checkArtistReleases(){
 // USAGE: create toast notification
 // TODO: 
 function createToast(){
-
+    console.log("creating toast notification");
 }

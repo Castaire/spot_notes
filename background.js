@@ -2,53 +2,58 @@
 'use strict';
 
 const clientID = "fluffy";
-const clientSecret = "fluffy";
+const clientSecret = "fluff";
 
 
 
-// USAGE:   reset storage (just in case), upon installation setup
-chrome.runtime.onInstalled.addListener(function(){
+// USAGE:   reset storage and clear alarms upon installation setup
+chrome.runtime.onInstalled.addListener(function () {
     console.log("you just installed the extension! hurray!");
     chrome.storage.local.clear();
+    chrome.alarms.clear("spot_notes");
 });
 
 
 
 // USAGE:   
-chrome.runtime.onStartup.addListener(function(){
+chrome.runtime.onStartup.addListener(function () {
     console.log("you just started up the app!");
+    
+    // clear past alarm
+    chrome.alarms.clear("spot_notes");
 
-    chrome.storage.local.get("loginStatus", function(value){
-        if(chrome.runtime.lastError || value != "signedin"){
-            return; // exit callback
+    // check current login status
+    chrome.storage.local.get("loginStatus", function (value) {
+        if (chrome.runtime.lastError || value != "signedin") {
+            return;
         }
     });
 
     // try to get past authentication details
-    chrome.storage.local.get("xhrResponse", function(value){
+    chrome.storage.local.get("refreshToken", function (refreshToken) {
 
-        if(chrome.runtime.lastError){
+        if (chrome.runtime.lastError
+            || typeof refreshToken["refreshToken"] == "undefined") {
             console.log("could not find past authentication data!");
             return;
         }
 
         // TESTING: 
-        console.log("found storage items!");
-        console.log(value);
+        console.log("found refresh token!");
+        console.log(refreshToken);
 
         updateLoginStatusAndPopup("signedin");
-        checkAccessToken(value);
-        // TODO: load 'scheduler.js' then send message to start the check
 
-
-
+        // create alarm and  run artist-update check
+        checkAccessToken(refreshToken);
+        createAlarm();                      // alarm will ring once upon initiation !!!
     });
 });
 
 
 
 // USAGE:   initiates Spotify authorization flow
-function authorizeSpotify(){
+function authorizeSpotify() {
     const scope = "user-follow-read";
     const redirectURI = chrome.identity.getRedirectURL("spotnotes/");
 
@@ -58,30 +63,32 @@ function authorizeSpotify(){
         `&scope=${scope}`;
 
     // initialize authorization 
-    return chrome.identity.launchWebAuthFlow({
-        url: authURL,
-        interactive: true
-    },
+    return chrome.identity.launchWebAuthFlow(
+        {
+            url: authURL,
+            interactive: true
+        },
 
-    // callback upon authorization request launch
-    function(responseUrl){
+        // callback upon authorization request launch
+        function (responseUrl) {
 
-        if(chrome.runtime.lastError){
-            updateLoginStatusAndPopup("signedin_error");
-            alert("user login was unsuccessful :(");
-            return;
+            if (chrome.runtime.lastError) {
+                updateLoginStatusAndPopup("signedin_error");
+                console.log("user login was unsuccessful :(");
+                return;
+            }
+
+            // exchange authorization code with access token
+            let authCode = responseUrl.split("=")[1];
+            getAccessToken(authCode, redirectURI);
         }
-
-        // exchange authorization code with access token
-        let authCode = responseUrl.split("=")[1];
-        getAccessToken(authCode, redirectURI);
-    });
+    );
 }
 
 
 
 // USAGE:   exchanges authorization code for access token in OAuth process 
-function getAccessToken(authCode, redirectURI){
+function getAccessToken(authCode, redirectURI) {
 
     let xhr = new XMLHttpRequest();
     xhr.open('POST', 'https://accounts.spotify.com/api/token');
@@ -96,19 +103,25 @@ function getAccessToken(authCode, redirectURI){
         `&redirect_uri=${redirectURI}`;
 
     // runs after completing XHR request
-    xhr.onload = function(){
+    xhr.onload = function () {
         console.log("finished XHR request !!!");
 
-        if(xhr.status >= 200 && xhr.status < 300){
+        if (xhr.status >= 200 && xhr.status < 300) {
+            chrome.storage.local.set({ "lastXHRRetrievalTime": Date.now() });
+
             let resp = JSON.parse(xhr.response);
-            chrome.storage.local.set({"xhrResponse" : resp});
+
+            console.log(resp["access_token"]);
+            chrome.storage.local.set({ "accessToken": resp["access_token"] });
+            chrome.storage.local.set({ "refreshToken": resp["refresh_token"] });
+
             updateLoginStatusAndPopup("signedin");
 
-        }else{
-            console.error("invalid XHR request !!!"); // TODO: add moar later?
+        } else {
+            console.error("invalid XHR request !!!");
 
         }
-    }
+    };
 
     xhr.send(xhrBody);
 }
@@ -116,13 +129,20 @@ function getAccessToken(authCode, redirectURI){
 
 
 // USAGE:   handles message passing from various content scripts
-chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
-    if(request.action == "launchOAuth"){
-        alert("just got a launchOAuth message!");
+chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+    if (request.action == "launchOAuth") {
+        console.log("just got a launchOAuth message!");
+
         authorizeSpotify();
 
-    }else{
-        alert("Request [ " + request.action + " ] failed :(");
+        chrome.storage.get("loginStatus", function (value) {
+            if (value == "signedIn") {
+                createAlarm();  // alarm will immediately run ONCE upon initializing
+            }
+        });
+
+    } else {
+        console.log("Request [ " + request.action + " ] failed :(");
 
     }
 });
@@ -130,39 +150,115 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
 
 
 // USAGE:   handles spot_notes alarm to check for new releases
-chrome.alarms.onAlarm.addListener(function(alarm){
-    if(alarm.name == "spot_notes_alarm"){
-        alert("spot_notes alarm just rang !!!");
-        checkAccessToken();
-        chrome.runtime.sendMessage({status: "checkArtistReleases"});
-    }
+chrome.alarms.onAlarm.addListener(function () {
+    console.log("spot_notes alarm just rang !!!");
+
+    chrome.storage.local.get("refreshToken", function (refreshToken) {
+
+        if (chrome.runtime.lastError) {
+            console.error("couldn't find refresh token, gah!!!");
+            return;
+        }
+
+        checkAccessToken(refreshToken);
+        runSpotifyCheck();
+    });
 });
 
 
 
 // USAGE:   updates popup and values, based on login status
-function updateLoginStatusAndPopup(status){
-    chrome.storage.local.set({"loginStatus" : status});
-    
+function updateLoginStatusAndPopup(status) {
+    chrome.storage.local.set({ "loginStatus": status });
+
     let popupVersion = "login_" + status + ".html";
-    chrome.browserAction.setPopup({popup : `${popupVersion}`});
-    
-    // TODO:    immediately refresh popup, ughhhhhhhhhh X . X kill me
+    chrome.browserAction.setPopup({ popup: `${popupVersion}` });
+
+    // immediately refresh popup if popup is still open
+    chrome.runtime.sendMessage({ action: "updatePopup", path: `${popupVersion}` });
 }
 
 
 
-// USAGE:   loads and runs script to check for artist releases
-function loadRunScheduler(){
+// USAGE:   runs script to check for latest artist releases
+function runSpotifyCheck() {
     // TODO: 
-    print("trying to load and run the scheduler!");
+    console.log("trying to run the scheduler!");
+
+
+
+
+
+
+}
+
+
+// USAGE:   creates "spot_notes" alarm
+// NOTE:    alarm will ring ONCE upon creation, then will ring once per 15 minute cycle
+function createAlarm() {
+    alert("trying to create alarm !!!");
+    chrome.alarms.get("spot_notes", function (alarm) {
+
+        // TESTING: 
+        console.log("alarm! : ");
+        console.log(alarm);
+
+        if (typeof alarm != "undefined") {    // alarm has already been created
+            return;
+        } else {
+            console.log("creating alarm!");
+            chrome.alarms.create("spot_notes", { when: Date.now(), periodInMinutes: 15 });
+        }
+    });
+}
+
+
+// USAGE:   
+function checkAccessToken(refreshToken) {
+    chrome.storage.local.get("lastXHRRetrievalTime", function (time) {
+
+        if (chrome.runtime.lastError || typeof time == "undefined") {
+            console.log("Heck. Couldn't find time of last successful XHR retrieval");
+        }
+
+        // check if access token is still valid 
+        var timeDiff = Date.now() - time;
+        if (!isNaN(timeDiff) && timeDiff <= 3540000) {    // 59 minutes in milliseconds
+            return;
+        }
+
+        // refresh access token 
+        let xhrRefresh = new XMLHttpRequest();
+        xhrRefresh.open('POST', 'https://accounts.spotify.com/api/token');
+
+        xhrRefresh.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhrRefresh.setRequestHeader('Accept', 'application/json');
+        let encodedAuthValue = btoa(clientID + ":" + clientSecret);
+        xhrRefresh.setRequestHeader('Authorization', `Basic ${encodedAuthValue}`);
+
+        // TESTING:
+        console.log("Hello world motherfuckers !!!");
+        console.log(refreshToken);
+        console.log(refreshToken["refreshToken"]);
+
+        let xhrRefreshBody = `grant_type=refresh_token` +
+            `&refresh_token=${refreshToken["refreshToken"]}`;
+
+        xhrRefresh.onload = function () {
+            if (xhrRefresh.status >= 200 && xhrRefresh.status < 300) {
+                console.log("sucessfully refreshed access token!");
+
+                let resp = JSON.parse(xhrRefresh.response);
+                chrome.storage.local.set({ "accessToken": resp });
+
+            } else {
+                console.error("invalid XHR refresh request !!!");
+            }
+        };
+
+        xhrRefresh.send(xhrRefreshBody);
+    });
 }
 
 
 
-// USAGE:   check that the current access token is valid; otherwise refresh
-// TODO:
-function checkAccessToken(obj){
-    // TESTING: 
-    console.log("checking access tokens");
-}

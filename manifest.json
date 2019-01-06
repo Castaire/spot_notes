@@ -15,9 +15,6 @@
 		"identity",
 		"alarms",
 		"activeTab",
-		"tabs",
-		"https://*/*",
-		"https://accounts.spotify.com/*",
-		"https://accounts.spotify.com/authorize/*"
+		"https://*/*"
 	]
 }

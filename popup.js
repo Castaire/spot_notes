@@ -5,6 +5,16 @@
 
 'use strict';
 
+// USAGE:   immediately refresh popup html version
+chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
+    if(request.action == "updatePopup"){
+        window.location.href = `${request.path}`;
+        alert(`${request.path}`);
+    }
+});
+
+///////////////////////////////////////////////////////////////////////////////
+
 let notificationText = document.getElementById('notificationText');
 
 let authButton = document.getElementById('userAuth');
