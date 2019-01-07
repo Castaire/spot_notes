@@ -2,8 +2,7 @@
 'use strict';
 
 const clientID = "fluffy";
-const clientSecret = "fluff";
-
+const clientSecret = "fluffy";
 
 
 // USAGE:   reset storage and clear alarms upon installation setup
@@ -135,7 +134,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
         authorizeSpotify();
 
-        chrome.storage.get("loginStatus", function (value) {
+        chrome.storage.local.get("loginStatus", function (value) {
             if (value == "signedIn") {
                 createAlarm();  // alarm will immediately run ONCE upon initializing
             }
