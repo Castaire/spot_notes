@@ -17,7 +17,7 @@ chrome.runtime.onInstalled.addListener(function () {
 // USAGE:   
 chrome.runtime.onStartup.addListener(function () {
     console.log("you just started up the app!");
-    
+
     // clear past alarm
     chrome.alarms.clear("spot_notes");
 
@@ -53,76 +53,81 @@ chrome.runtime.onStartup.addListener(function () {
 
 // USAGE:   initiates Spotify authorization flow
 function authorizeSpotify() {
-    const scope = "user-follow-read";
-    const redirectURI = chrome.identity.getRedirectURL("spotnotes/");
+    return new Promise(function (resolve, reject) {
 
-    let authURL = `https://accounts.spotify.com/authorize?` +
-        `client_id=${clientID}` +
-        `&response_type=code&redirect_uri=${redirectURI}` +
-        `&scope=${scope}`;
+        const scope = "user-follow-read";
+        const redirectURI = chrome.identity.getRedirectURL("spotnotes/");
 
-    // initialize authorization 
-    return chrome.identity.launchWebAuthFlow(
-        {
-            url: authURL,
-            interactive: true
-        },
+        let authURL = `https://accounts.spotify.com/authorize?` +
+            `client_id=${clientID}` +
+            `&response_type=code&redirect_uri=${redirectURI}` +
+            `&scope=${scope}`;
 
-        // callback upon authorization request launch
-        function (responseUrl) {
+        // initialize authorization 
+        return chrome.identity.launchWebAuthFlow(
+            {
+                url: authURL,
+                interactive: true
+            },
 
-            if (chrome.runtime.lastError) {
-                updateLoginStatusAndPopup("signedin_error");
-                console.log("user login was unsuccessful :(");
-                return;
+            // callback upon authorization request launch
+            function (responseUrl) {
+
+                if (chrome.runtime.lastError) {
+                    updateLoginStatusAndPopup("signedin_error");
+                    //console.log("user login was unsuccessful :(");
+                    reject("user login was unsuccessful :(");
+                    return;
+                }
+
+                // exchange authorization code with access token
+                let authCode = responseUrl.split("=")[1];
+                resolve({ authCode: authCode, redirectURI: redirectURI });
             }
-
-            // exchange authorization code with access token
-            let authCode = responseUrl.split("=")[1];
-            getAccessToken(authCode, redirectURI);
-        }
-    );
+        );
+    });
 }
 
 
 
 // USAGE:   exchanges authorization code for access token in OAuth process 
 function getAccessToken(authCode, redirectURI) {
+    return new Promise(function (resolve, reject) {
 
-    let xhr = new XMLHttpRequest();
-    xhr.open('POST', 'https://accounts.spotify.com/api/token');
+        let xhr = new XMLHttpRequest();
+        xhr.open('POST', 'https://accounts.spotify.com/api/token');
 
-    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-    xhr.setRequestHeader('Accept', 'application/json');
-    let encodedAuthValue = btoa(clientID + ":" + clientSecret);
-    xhr.setRequestHeader('Authorization', `Basic ${encodedAuthValue}`);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.setRequestHeader('Accept', 'application/json');
+        let encodedAuthValue = btoa(clientID + ":" + clientSecret);
+        xhr.setRequestHeader('Authorization', `Basic ${encodedAuthValue}`);
 
-    let xhrBody = `grant_type=authorization_code` +
-        `&code=${authCode}` +
-        `&redirect_uri=${redirectURI}`;
+        let xhrBody = `grant_type=authorization_code` +
+            `&code=${authCode}` +
+            `&redirect_uri=${redirectURI}`;
 
-    // runs after completing XHR request
-    xhr.onload = function () {
-        console.log("finished XHR request !!!");
+        // runs after completing XHR request
+        xhr.onload = function () {
+            console.log("finished XHR request !!!");
 
-        if (xhr.status >= 200 && xhr.status < 300) {
-            chrome.storage.local.set({ "lastXHRRetrievalTime": Date.now() });
+            if (xhr.status >= 200 && xhr.status < 300) {
+                chrome.storage.local.set({ "lastXHRRetrievalTime": Date.now() });
 
-            let resp = JSON.parse(xhr.response);
+                let resp = JSON.parse(xhr.response);
 
-            console.log(resp["access_token"]);
-            chrome.storage.local.set({ "accessToken": resp["access_token"] });
-            chrome.storage.local.set({ "refreshToken": resp["refresh_token"] });
+                chrome.storage.local.set({ "accessToken": resp["access_token"] });
+                chrome.storage.local.set({ "refreshToken": resp["refresh_token"] });
 
-            updateLoginStatusAndPopup("signedin");
+                updateLoginStatusAndPopup("signedin");
+                resolve();
 
-        } else {
-            console.error("invalid XHR request !!!");
+            } else {
+                reject("invalid XHR request !!!");
+            }
+        };
 
-        }
-    };
-
-    xhr.send(xhrBody);
+        xhr.send(xhrBody);
+    })
 }
 
 
@@ -132,13 +137,21 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     if (request.action == "launchOAuth") {
         console.log("just got a launchOAuth message!");
 
-        authorizeSpotify();
+        // TODO: works, but think about it more later
+        authorizeSpotify()
+            .then(function (authResult) {       // exchange auth code for access token
+                return (getAccessToken(authResult["authCode"], authResult["redirectURI"]));
 
-        chrome.storage.local.get("loginStatus", function (value) {
-            if (value == "signedIn") {
-                createAlarm();  // alarm will immediately run ONCE upon initializing
-            }
-        });
+            })
+            .then(function () {                 // create alarm (will run ONCE upon initializing)
+                console.log("creating alarm after signing in! ");
+                createAlarm();
+
+            })
+            .catch(function (error) {
+                console.log("something got fucked :(");
+                console.error(error);
+            });
 
     } else {
         console.log("Request [ " + request.action + " ] failed :(");
@@ -179,10 +192,18 @@ function updateLoginStatusAndPopup(status) {
 
 
 
-// USAGE:   runs script to check for latest artist releases
+// USAGE:   run scheduler.js in current tab
 function runSpotifyCheck() {
     // TODO: 
-    console.log("trying to run the scheduler!");
+    alert("trying to run the scheduler!");
+
+    chrome.tabs.query({ currentWindow: true, active: true }, function (tabs) {
+    }
+    );
+
+
+
+
 
 
 
@@ -234,11 +255,6 @@ function checkAccessToken(refreshToken) {
         xhrRefresh.setRequestHeader('Accept', 'application/json');
         let encodedAuthValue = btoa(clientID + ":" + clientSecret);
         xhrRefresh.setRequestHeader('Authorization', `Basic ${encodedAuthValue}`);
-
-        // TESTING:
-        console.log("Hello world motherfuckers !!!");
-        console.log(refreshToken);
-        console.log(refreshToken["refreshToken"]);
 
         let xhrRefreshBody = `grant_type=refresh_token` +
             `&refresh_token=${refreshToken["refreshToken"]}`;
