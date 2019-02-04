@@ -1,9 +1,8 @@
 
 'use strict';
 
-const clientID = "fluffy";
-const clientSecret = "fluffy";
-
+const clientID = "6ac1116fc2574cdc8523cd84d29074c1";
+const clientSecret = "5f103edb1dab40c19bb326fc2dc590ce";
 
 // USAGE:   reset storage and clear alarms upon installation setup 
 chrome.runtime.onInstalled.addListener(function () {
@@ -45,7 +44,7 @@ chrome.runtime.onStartup.addListener(function () {
 
         // create alarm and run artist-update check
         checkAccessToken(refreshToken)
-            .then(createAlarm())               // alarm will ring once upon initiation !!! 
+            .then(createAlarm())             // alarm will ring once upon initiation !!! 
             .catch(function (err) {
                 console.error(err);
             });
@@ -67,7 +66,6 @@ function authorizeSpotify() {
             `&scope=${scope}`;
 
         // initialize authorization 
-        //return chrome.identity.launchWebAuthFlow(
         chrome.identity.launchWebAuthFlow(
             {
                 url: authURL,
@@ -88,13 +86,15 @@ function authorizeSpotify() {
                 }
             }
         );
+
     });
+    
 }
 
 
 
 // USAGE:   exchanges authorization code for access token in OAuth process 
-function getAccessToken(authCode, redirectURI) {
+function accessTokenExchange(authCode, redirectURI) {
     return new Promise(function (resolve, reject) {
 
         let xhr = new XMLHttpRequest();
@@ -142,7 +142,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
         authorizeSpotify().then(function (authResult) {
             // exchange auth code for access token
-            return (getAccessToken(authResult["authCode"], authResult["redirectURI"]));
+            return (accessTokenExchange(authResult["authCode"], authResult["redirectURI"]));
 
         }).then(function () {
             console.log("creating alarm after signing in! ");
@@ -171,12 +171,12 @@ chrome.alarms.onAlarm.addListener(function () {
             return;
         }
 
-        checkAccessToken(refreshToken).then(function(){
-            runSpotifyCheck();
-        }).catch(function(err){
+        checkAccessToken(refreshToken).then(function () {
+            checkArtistReleases();
+        }).catch(function (err) {
             console.error(err);
         });
-        
+
     });
 });
 
@@ -189,27 +189,10 @@ function updateLoginStatusAndPopup(status) {
     let popupVersion = "login_" + status + ".html";
     chrome.browserAction.setPopup({ popup: `${popupVersion}` });
 
-    // immediately refresh popup if popup is still open
+    // immediately refresh popup if popup is open
     chrome.runtime.sendMessage({ action: "updatePopup", path: `${popupVersion}` });
 }
 
-
-
-// USAGE:   run scheduler.js in current tab
-function runSpotifyCheck() {
-    // TODO:  NOTICE ME SENPAI
-    console.log("trying to run the scheduler!");
-
-
-
-
-
-
-
-
-
-
-}
 
 
 // USAGE:   creates "spot_notes" alarm
@@ -218,10 +201,7 @@ function createAlarm() {
     alert("trying to create alarm !!!");
     chrome.alarms.get("spot_notes", function (alarm) {
 
-        // TESTING: 
-        console.log(`alarm! : ${alarm}`);
-
-        if (typeof alarm != "undefined") {    // alarm has already been created
+        if (typeof alarm != "undefined") {      // alarm has already been created
             return;
         } else {
             console.log("creating alarm!");
@@ -231,7 +211,8 @@ function createAlarm() {
 }
 
 
-// USAGE:   
+// USAGE:   checks access token validity; refresh if there are less than 1 minute remaining
+// NOTE:    a spotify access token is valid for 60 minutes
 function checkAccessToken(refreshToken) {
     return new Promise(function (resolve, reject) {
         chrome.storage.local.get("lastXHRRetrievalTime", function (time) {
@@ -240,9 +221,9 @@ function checkAccessToken(refreshToken) {
                 console.log("Heck. Couldn't find time of last successful XHR retrieval");
             }
 
-            // check if access token is still valid 
-            var timeDiff = Date.now() - time;
-            if (!isNaN(timeDiff) && timeDiff <= 3540000) {    // 59 minutes in milliseconds
+            // check if access token is still valid
+            var timeElapsed = Date.now() - time;
+            if (!isNaN(timeElapsed) && timeElapsed <= 3540000) {    // 59 minutes in milliseconds
                 return;
             }
 
@@ -275,6 +256,3 @@ function checkAccessToken(refreshToken) {
         });
     })
 }
-
-
-
