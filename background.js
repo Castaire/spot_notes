@@ -1,8 +1,8 @@
 
 'use strict';
 
-const clientID = "6ac1116fc2574cdc8523cd84d29074c1";
-const clientSecret = "5f103edb1dab40c19bb326fc2dc590ce";
+const clientID = "fluffy";
+const clientSecret = "fluffy";
 
 // USAGE:   reset storage and clear alarms upon installation setup 
 chrome.runtime.onInstalled.addListener(function () {
