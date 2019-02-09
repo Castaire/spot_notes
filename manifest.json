@@ -17,6 +17,7 @@
 		"alarms",
 		"activeTab",
 		"tabs",
+		"notifications",
 		"https://*/*"
 	]
 }
