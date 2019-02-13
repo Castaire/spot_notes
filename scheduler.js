@@ -10,44 +10,47 @@
 
 
 // USAGE:
+// TODO:
+//  1. for each artist, get all albums released this year
+//  2. filter for albums that were newly released between current and previous check
+//  3. create appropriate notifications
+//      a) if multiple track album  -> album toast
+//      b) if single track album    -> single toast
+//
+//  4. OPT: at some point we probably want to store when was our last check in local XD XD XD
 async function checkArtistReleases() {
     console.log("trying to check artist releases x . x");
 
-    /* TESTING:     UNCOMMENT LATER; FOR TESTING PURPOSES ONLY
+    let accessTokenPromise = await getAccessToken();
+    let accessToken = accessTokenPromise.accessToken;
+
     let artistNames = [];
     let endpoint = "https://api.spotify.com/v1/me/following?type=artist&limit=50";
 
     // paginated API calls to get complete list of artists
     while (endpoint != null) {
-        let artistList = await getArtists(accessTokenPromise.accessToken, endpoint);
+        let artistList = await getArtists(accessToken, endpoint);
         artistNames = artistNames.concat(parseArtistNames(artistList));
         endpoint = artistList.artists.next;
     }
 
-    console.log(artistNames.length);
-    console.log(artistNames);
-    */
+    // get current date in YYYY-MM-DD format
+    var today = new Date();
+    var today_date = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    console.log(today_date);
 
-    // TODO:
-    //  1. for each artist, get all albums released this year
-    //  2. filter for albums that were newly released between current and previous check
-    //  3. create appropriate notifications
-    //      a) if multiple track album  -> album toast
-    //      b) if single track album    -> single toast
-    //
-    //  4. OPT: at some point we probably want to store when was our last check in local XD XD XD
+    var i;
+    for (i = 0; i < artistNames.length; i++) {
+        console.log(i); 
+        
+        let artistname = artistNames[i];
+        let albums = await getAlbumsByArtistName(artistname, 2019, accessToken);
 
-    // TESTING: 
-    let accessTokenPromise = await getAccessToken();
-    let accessToken = accessTokenPromise.accessToken;
-
-    let t = await getAlbumsByArtistName("khai dreams", 2018, accessToken);
-    console.log(t);
-
-    let parsedAlbums = parseAlbums(t, new Date("2018-05-05"));
-    console.log(parsedAlbums);
-
-    createNotifications("khai dreams", parsedAlbums);
+        if (albums.total != 0) {
+            let parsedAlbums = parseAlbums(albums, today_date);
+            createNotifications(artistname, parsedAlbums);
+        }
+    }
 }
 
 
@@ -75,10 +78,8 @@ function getArtists(accessToken, endpoint) {
         xhrArtistList.setRequestHeader('Accept', 'application/json');
         xhrArtistList.setRequestHeader('Authorization', `Bearer ${accessToken}`);
 
-        // TODO:    maybe improve this later ???
         xhrArtistList.onload = function () {
             if (xhrArtistList.status >= 200 && xhrArtistList.status < 300) {
-                console.log("got a list of artists!");
                 let resp = JSON.parse(xhrArtistList.response);
                 resolve(resp);
 
@@ -111,7 +112,6 @@ function getAlbumsByArtistName(artistName, year, accessToken) {
 
         xhrAlbums.onload = function () {
             if (xhrAlbums.status >= 200 && xhrAlbums.status < 300) {
-                console.log("got the artist's album!");
                 let resp = JSON.parse(xhrAlbums.response);
                 resolve(resp);
 
@@ -148,11 +148,10 @@ function parseAlbums(albumList, date) {
     let results = [];
 
     var i;
-    for (i = 0; i < albumList.albums.total; i++) {
+    for (i = 0; i < albumList.albums.items.length; i++) {
         let album = albumList.albums.items[i];
 
         // TODO:    can we actually ignore albums with non-day-precision ???
-        // WARNING: not sure, think about this later XD XD XD
         if (album.release_date_precision == "day") {
 
             if (new Date(album.release_date) > date) {
@@ -161,11 +160,15 @@ function parseAlbums(albumList, date) {
                 let albumImage = album.images[album.images.length - 1];
                 let albumObj = {
                     name: `${album.name}`, date: `${album.release_date}`,
-                    type: `${album.album_type}`, image_url: `${albumImage.url}`
+                    type: `${album.album_type}`, image_url: `${albumImage.url}`,
+                    web_url: `${album.external_urls.spotify}`
                 };
 
                 results.push(albumObj);
             }
+        } else {
+            // TESTING:  for testing purposes only (so far, almost all albums have a date precision of "day" !!!)
+            console.log(album);
         }
     }
 
@@ -182,11 +185,29 @@ function parseAlbums(albumList, date) {
  *          1) date             - date of album release
  *          2) type             - type of album ("album" or "single")
  *          3) image_url        - url to album image
+ *          4) web_url          - url to album
  */
 function createNotifications(artistName, parsedAlbums) {
-    let listSize = parsedAlbums.length;
-    
+    var i;
+    for (i = 0; i < parsedAlbums.length; i++) {
+        let albumObj = parsedAlbums[i];
 
+        let notification = {
+            type: 'basic',
+            iconUrl: `${albumObj.image_url}`,
+            title: `${albumObj.name} - ${artistName}`,
+            message: ''
+        }
 
+        if (albumObj.type == "album") {
+            notification.message = `new album released on ${albumObj.date}`;
 
+        } else if (albumObj.type == "single") {
+            notification.message = `new single released on ${albumObj.date}`
+        }
+
+        chrome.notifications.create(notification);
+    }
 }
+
+
