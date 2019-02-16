@@ -10,51 +10,65 @@
 
 
 // USAGE:
-// TODO:
-//  1. for each artist, get all albums released this year
-//  2. filter for albums that were newly released between current and previous check
-//  3. create appropriate notifications
-//      a) if multiple track album  -> album toast
-//      b) if single track album    -> single toast
-//
-//  4. OPT: at some point we probably want to store when was our last check in local XD XD XD
 async function checkArtistReleases() {
-    console.log("trying to check artist releases x . x");
+    console.log("checking for new releases from followed artists ...");
 
     let accessTokenPromise = await getAccessToken();
     let accessToken = accessTokenPromise.accessToken;
 
-    let artistNames = [];
-    let endpoint = "https://api.spotify.com/v1/me/following?type=artist&limit=50";
+    // date handling
+    var today = new Date();                     // today's date in full format
+    var currentYear = today.getFullYear();      // YYYY
+    //var today_date = new Date(currentYear, today.getMonth(), today.getDate());  // YYYY-MM-DD
+    var today_date = new Date("2019-02-14");
 
-    // paginated API calls to get complete list of artists
-    while (endpoint != null) {
-        let artistList = await getArtists(accessToken, endpoint);
-        artistNames = artistNames.concat(parseArtistNames(artistList));
-        endpoint = artistList.artists.next;
+    // endpoint for getting artists followed by the user
+    let artists_endpoint = "https://api.spotify.com/v1/me/following?type=artist&limit=50";
+
+    // paginated API calls to get complete list of names of followed artists
+    let artistNames = [];
+    while (artists_endpoint != null) {
+        let artistList = await getObjects(artists_endpoint, accessToken);
+
+        if (artistList.artists.items.length > 0) {
+            artistNames = artistNames.concat(parseArtistNames(artistList));
+        }
+
+        artists_endpoint = artistList.artists.next;
     }
 
-    // get current date in YYYY-MM-DD format
-    var today = new Date();
-    var today_date = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    console.log(today_date);
+    let search_endpoint = `https://api.spotify.com/v1/search?`;
 
     var i;
     for (i = 0; i < artistNames.length; i++) {
-        console.log(i); 
-        
-        let artistname = artistNames[i];
-        let albums = await getAlbumsByArtistName(artistname, 2019, accessToken);
+        console.log(`parsing artist : ${i}`);
+        let name = artistNames[i];
 
-        if (albums.total != 0) {
-            let parsedAlbums = parseAlbums(albums, today_date);
-            createNotifications(artistname, parsedAlbums);
+        let album_endpoint = `${search_endpoint}q="${name}"%20year:${currentYear}&type=album&limit=50`;
+
+        // paginated API calls to complete list of albums by the artist for the current year
+        let parsed_albums = [];
+        while (album_endpoint != null) {
+            let albumList = await getObjects(album_endpoint, accessToken);
+
+            if (albumList.albums.items.length > 0) {
+                parsed_albums = parsed_albums.concat(parseAlbums(albumList, today_date));
+            }
+
+            album_endpoint = albumList.albums.next;
+        }
+
+        if (parsed_albums.length > 0) {
+            createNotifications(name, parsed_albums);
         }
     }
+
+    console.log("completed check!");
 }
 
 
-// USAGE:      returns access token from storage
+
+// USAGE:   returns access token from storage
 function getAccessToken() {
     return new Promise(function (resolve, reject) {
         chrome.storage.local.get("accessToken", function (resp) {
@@ -68,63 +82,31 @@ function getAccessToken() {
 }
 
 
-// USAGE:   gets 'artists' object based on given endpoint and access token
-function getArtists(accessToken, endpoint) {
+// USAGE:   generalized function to make GET requests based on provided endpoint
+//          and valid access token
+function getObjects(endpoint, accessToken) {
     return new Promise(function (resolve, reject) {
-        let xhrArtistList = new XMLHttpRequest();
-        xhrArtistList.open('GET', `${endpoint}`);
+        let xhr = new XMLHttpRequest();
+        xhr.open('GET', `${endpoint}`);
 
-        xhrArtistList.setRequestHeader('Content-Type', 'application/json');
-        xhrArtistList.setRequestHeader('Accept', 'application/json');
-        xhrArtistList.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
 
-        xhrArtistList.onload = function () {
-            if (xhrArtistList.status >= 200 && xhrArtistList.status < 300) {
-                let resp = JSON.parse(xhrArtistList.response);
+        xhr.onload = function () {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                let resp = JSON.parse(xhr.response);
                 resolve(resp);
 
             } else {
-                console.log("something got fucked when fetching artist lists");
-                reject();
-            }
-        };
-
-        xhrArtistList.send();
-    });
-}
-
-
-// USAGE:   returns list of albums for given artist name 
-// TODO:    hmmm, maybe there's a way to abstract this 
-//                  ^ pretty similar to what 'getArtists' is doing .....
-function getAlbumsByArtistName(artistName, year, accessToken) {
-    return new Promise(function (resolve, reject) {
-        let xhrAlbums = new XMLHttpRequest();
-
-        let endpoint = `https://api.spotify.com/v1/search?`;
-        endpoint = `${endpoint}q="${artistName}"%20year:${year}&type=album&limit=50`;
-
-        xhrAlbums.open('GET', `${endpoint}`);
-
-        xhrAlbums.setRequestHeader('Content-Type', 'application/json');
-        xhrAlbums.setRequestHeader('Accept', 'application/json');
-        xhrAlbums.setRequestHeader('Authorization', `Bearer ${accessToken}`);
-
-        xhrAlbums.onload = function () {
-            if (xhrAlbums.status >= 200 && xhrAlbums.status < 300) {
-                let resp = JSON.parse(xhrAlbums.response);
-                resolve(resp);
-
-            } else {
-                console.log("something went funk getting an artist's album");
+                console.log("something went funk when requesting for objects...");
                 reject();
             }
         }
 
-        xhrAlbums.send();
+        xhr.send();
     });
 }
-
 
 
 // USAGE:   parses out and returns array of artist names from 'artists' object
@@ -142,8 +124,18 @@ function parseArtistNames(artistList) {
 }
 
 
-// USAGE:   
-// WARNING:     'date' must be a Date object !!!
+
+/**
+ * USAGE:
+ * @param {} albumList
+ * @param {Date} date
+ * 
+ * NOTE:    from some testing, it seems that most album relase dates will have a "day" precision,
+ *          however according to the documentation, this isn't necessary the case
+ * 
+ *          for now, I will ONLY create notifications for albums that have relase dates
+ *          with "day" precision > . < ||| 
+ */
 function parseAlbums(albumList, date) {
     let results = [];
 
@@ -151,13 +143,12 @@ function parseAlbums(albumList, date) {
     for (i = 0; i < albumList.albums.items.length; i++) {
         let album = albumList.albums.items[i];
 
-        // TODO:    can we actually ignore albums with non-day-precision ???
         if (album.release_date_precision == "day") {
-
-            if (new Date(album.release_date) > date) {
+            if (new Date(album.release_date) >= date) {
 
                 // get URL of smallest album image
                 let albumImage = album.images[album.images.length - 1];
+
                 let albumObj = {
                     name: `${album.name}`, date: `${album.release_date}`,
                     type: `${album.album_type}`, image_url: `${albumImage.url}`,
@@ -166,9 +157,6 @@ function parseAlbums(albumList, date) {
 
                 results.push(albumObj);
             }
-        } else {
-            // TESTING:  for testing purposes only (so far, almost all albums have a date precision of "day" !!!)
-            console.log(album);
         }
     }
 
@@ -192,6 +180,10 @@ function createNotifications(artistName, parsedAlbums) {
     for (i = 0; i < parsedAlbums.length; i++) {
         let albumObj = parsedAlbums[i];
 
+        // create notification id
+        let id = `${albumObj.name}${albumObj.date}`;
+        id = id.replace(/\s/g, '');     // remove spaces
+
         let notification = {
             type: 'basic',
             iconUrl: `${albumObj.image_url}`,
@@ -201,13 +193,46 @@ function createNotifications(artistName, parsedAlbums) {
 
         if (albumObj.type == "album") {
             notification.message = `new album released on ${albumObj.date}`;
-
         } else if (albumObj.type == "single") {
             notification.message = `new single released on ${albumObj.date}`
         }
 
-        chrome.notifications.create(notification);
+        // hash the albums' web URL to local storage by notification id
+        chrome.storage.local.set({ [id]: albumObj.web_url });
+
+        chrome.notifications.create(id, notification);
     }
 }
+
+
+// USAGE:   upon user click, open album URL in a new tab inside current window
+chrome.notifications.onClicked.addListener(function (notificationID) {
+    console.log(notificationID);
+
+    chrome.storage.local.get(notificationID, function (albumURL) {
+        console.log(albumURL);
+        console.log(albumURL[notificationID]);
+        chrome.tabs.create({ url: albumURL[notificationID] });
+    });
+
+    // remove stored album URL
+    chrome.storage.local.remove(notificationID, function () {
+        console.log("removing album URL on click");
+    });
+});
+
+
+
+// USAGE:   on notification close, remove stored album URL from local storage
+// NOTE:    
+chrome.notifications.onClosed.addListener(function (notificationID, byUser) {
+    console.log("trying to remove something...");
+
+    if (byUser) {
+        console.log(`removing ${notificationID} by user`);
+        chrome.storage.local.remove(notificationID);
+    }
+});
+
 
 
