@@ -9,24 +9,24 @@
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse){
     if(request.action == "updatePopup"){
         window.location.href = `${request.path}`;
-        alert(`${request.path}`);
     }
 });
-
-///////////////////////////////////////////////////////////////////////////////
 
 let notificationText = document.getElementById('notificationText');
 
 let authButton = document.getElementById('userAuth');
 authButton.addEventListener('click', function(){
     
-    chrome.storage.local.get("loginStatus", function(value){
+    chrome.storage.local.get("loginStatus", function(statusObj){
 
-        if(chrome.runtime.lastError || value != "signedin"){
+        var status = statusObj.loginStatus;
+
+        if(chrome.runtime.lastError || status != "signedin"){    // launch authorization process
             chrome.runtime.sendMessage({action: 'launchOAuth'});
-        };
 
-        // TODO: maybe do something so the user can log out? O.O
+        }else if(status == "signedin"){                         // logout and remove authorization
+            chrome.runtime.sendMessage({action: 'logoutUser'});
 
+        }
     });
 });

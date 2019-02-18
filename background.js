@@ -21,8 +21,8 @@ chrome.runtime.onStartup.addListener(function () {
     chrome.alarms.clear("spot_notes");
 
     // check current login status
-    chrome.storage.local.get("loginStatus", function (value) {
-        if (chrome.runtime.lastError || value != "signedin") {
+    chrome.storage.local.get("loginStatus", function (statusObj) {
+        if (chrome.runtime.lastError || statusObj.loginStatus != "signedin") {
             return;
         }
     });
@@ -36,15 +36,11 @@ chrome.runtime.onStartup.addListener(function () {
             return;
         }
 
-        // TESTING: 
-        console.log("found refresh token!");
-        console.log(refreshToken);
-
         updateLoginStatusAndPopup("signedin");
 
         // create alarm and run artist-update check
         checkAccessToken(refreshToken)
-            .then(createAlarm())             // alarm will ring once upon initiation !!! 
+            .then(createAlarm(60))             // alarm will ring once upon initiation !!! 
             .catch(function (err) {
                 console.error(err);
             });
@@ -88,7 +84,7 @@ function authorizeSpotify() {
         );
 
     });
-    
+
 }
 
 
@@ -135,53 +131,6 @@ function accessTokenExchange(authCode, redirectURI) {
 
 
 
-// USAGE:    handles message passing from various content scripts
-chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
-    if (request.action == "launchOAuth") {
-        console.log("just got a launchOAuth message!");
-
-        authorizeSpotify().then(function (authResult) {
-            // exchange auth code for access token
-            return (accessTokenExchange(authResult["authCode"], authResult["redirectURI"]));
-
-        }).then(function () {
-            console.log("creating alarm after signing in! ");
-            createAlarm();                      // will ring once upon initializing
-
-        }).catch(function (error) {
-            console.log("something got fucked :(");
-            console.error(error);
-        });
-
-    } else {
-        console.log("Request [ " + request.action + " ] failed :(");
-
-    }
-});
-
-
-
-// USAGE:   handles spot_notes alarm to check for new releases
-chrome.alarms.onAlarm.addListener(function () {
-    console.log("spot_notes alarm just rang !!!");
-
-    chrome.storage.local.get("refreshToken", function (refreshToken) {
-        if (chrome.runtime.lastError) {
-            console.error("couldn't find refresh token, gah!!!");
-            return;
-        }
-
-        checkAccessToken(refreshToken).then(function () {
-            checkArtistReleases();
-        }).catch(function (err) {
-            console.error(err);
-        });
-
-    });
-});
-
-
-
 // USAGE:   updates popup and values, based on login status
 function updateLoginStatusAndPopup(status) {
     chrome.storage.local.set({ "loginStatus": status });
@@ -196,16 +145,18 @@ function updateLoginStatusAndPopup(status) {
 
 
 // USAGE:   creates "spot_notes" alarm
-// NOTE:    alarm will ring ONCE upon creation, then will ring once per 15 minute cycle
-function createAlarm() {
-    alert("trying to create alarm !!!");
+// NOTE:    alarm will ring ONCE upon creation, then will ring once per cycleTime (in minutes)
+//          - default cycle time is 60 minutes
+function createAlarm(cycleTime) {
+    if (cycleTime == undefined) { cycleTime = 60; }
+
     chrome.alarms.get("spot_notes", function (alarm) {
 
         if (typeof alarm != "undefined") {      // alarm has already been created
             return;
         } else {
             console.log("creating alarm!");
-            chrome.alarms.create("spot_notes", { when: Date.now(), periodInMinutes: 15 });
+            chrome.alarms.create("spot_notes", { when: Date.now(), periodInMinutes: cycleTime });
         }
     });
 }
@@ -256,3 +207,78 @@ function checkAccessToken(refreshToken) {
         });
     })
 }
+
+
+
+// USAGE:   removes all existing 
+function logoutUser() {
+    chrome.storage.local.clear();
+    chrome.alarms.clear("spot_notes");
+
+    chrome.identity.launchWebAuthFlow(
+        {
+            url: 'https://accounts.spotify.com/en/logout',
+            interactive: true
+        }, 
+
+        function (responseUrl){
+            if(chrome.runtime.lastError){
+                console.log("user exited out of login/logout screen");
+            }
+            console.log("finished logging out!")
+        }
+    )
+
+    updateLoginStatusAndPopup("default");
+}
+
+
+// USAGE:    handles message passing from various content scripts
+chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+    if (request.action == "launchOAuth") {
+        console.log("just got a launchOAuth message!");
+
+        authorizeSpotify().then(function (authResult) {
+            // exchange auth code for access token
+            return (accessTokenExchange(authResult["authCode"], authResult["redirectURI"]));
+
+        }).then(function () {
+            console.log("creating alarm after signing in! ");
+            createAlarm(60);                      // will ring once upon initializing
+
+        }).catch(function (error) {
+            console.log("something got fucked :(");
+            console.log(error);
+        });
+
+    } else if (request.action == "logoutUser") {
+        console.log("trying to log user out!");
+        logoutUser();
+
+    } else {
+        console.log("Request [ " + request.action + " ] failed :(");
+
+    }
+});
+
+
+
+// USAGE:   handles spot_notes alarm to check for new releases
+chrome.alarms.onAlarm.addListener(function () {
+    console.log("spot_notes alarm just rang !!!");
+
+    chrome.storage.local.get("refreshToken", function (refreshToken) {
+        if (chrome.runtime.lastError) {
+            console.error("couldn't find refresh token, gah!!!");
+            return;
+        }
+
+        checkAccessToken(refreshToken).then(function () {
+            checkArtistReleases();
+        }).catch(function (err) {
+            console.error(err);
+        });
+
+    });
+});
+

@@ -13,50 +13,31 @@
 async function checkArtistReleases() {
     console.log("checking for new releases from followed artists ...");
 
+    removeOldAlbumURLs();
+
     let accessTokenPromise = await getAccessToken();
     let accessToken = accessTokenPromise.accessToken;
 
     // date handling
     var today = new Date();                     // today's date in full format
     var currentYear = today.getFullYear();      // YYYY
-    //var today_date = new Date(currentYear, today.getMonth(), today.getDate());  // YYYY-MM-DD
-    var today_date = new Date("2019-02-14");
+    var today_date = new Date(currentYear, today.getMonth(), today.getDate());  // YYYY-MM-DD
 
-    // endpoint for getting artists followed by the user
+    // get complete list of names of followed artists
     let artists_endpoint = "https://api.spotify.com/v1/me/following?type=artist&limit=50";
-
-    // paginated API calls to get complete list of names of followed artists
-    let artistNames = [];
-    while (artists_endpoint != null) {
-        let artistList = await getObjects(artists_endpoint, accessToken);
-
-        if (artistList.artists.items.length > 0) {
-            artistNames = artistNames.concat(parseArtistNames(artistList));
-        }
-
-        artists_endpoint = artistList.artists.next;
-    }
+    let artistNames = await makePaginatedCalls(artists_endpoint, accessToken, parseArtistNames);
 
     let search_endpoint = `https://api.spotify.com/v1/search?`;
 
     var i;
     for (i = 0; i < artistNames.length; i++) {
         console.log(`parsing artist : ${i}`);
+
         let name = artistNames[i];
 
+        // get complete list of albums by the artist for the current year
         let album_endpoint = `${search_endpoint}q="${name}"%20year:${currentYear}&type=album&limit=50`;
-
-        // paginated API calls to complete list of albums by the artist for the current year
-        let parsed_albums = [];
-        while (album_endpoint != null) {
-            let albumList = await getObjects(album_endpoint, accessToken);
-
-            if (albumList.albums.items.length > 0) {
-                parsed_albums = parsed_albums.concat(parseAlbums(albumList, today_date));
-            }
-
-            album_endpoint = albumList.albums.next;
-        }
+        let parsed_albums = await makePaginatedCalls(album_endpoint, accessToken, parseAlbums, today_date);
 
         if (parsed_albums.length > 0) {
             createNotifications(name, parsed_albums);
@@ -64,6 +45,58 @@ async function checkArtistReleases() {
     }
 
     console.log("completed check!");
+}
+
+
+
+// USAGE:   remove all locally-stored album URL values from last checkArtistRelease process
+function removeOldAlbumURLs(){
+    chrome.storage.local.get("lastNotificationID", function(value){
+
+        if(chrome.runtime.lastError || typeof value == "undefined"){
+            console.log("no previously defined value for lastNotificationID!");
+            return;
+        }
+
+        var i;
+        for(i = 0; i < value; i++){
+            chrome.storage.local.remove(i.toString());
+        }
+       
+        console.log("removed all old album URLs...");
+    });
+}
+
+
+
+/**
+ * USAGE:   generalized function to make paginated GET requests based
+ *          on provided endpoint and valid access token
+ * 
+ * @param {string}      endpoint        
+ * @param {string}      accessToken     
+ * @param {function}    parser          - relevant parser function for list object returned by GET
+ * @param {Date}        today_date      - REQUIRED if your parser requires a Date parameter
+ */
+
+async function makePaginatedCalls(endpoint, accessToken, parser, dateParam){
+    let results = [];
+
+    while(endpoint != null){
+        let itemList = await getObjects(endpoint, accessToken);
+
+        if(parser.name == "parseArtistNames"){
+            results = results.concat(parser(itemList));
+            endpoint = itemList.artists.next;
+
+        }else if(parser.name == "parseAlbums"){
+            results = results.concat(parser(itemList, dateParam));
+            endpoint = itemList.albums.next;
+
+        }
+    }
+
+    return results;
 }
 
 
@@ -80,6 +113,7 @@ function getAccessToken() {
         });
     });
 }
+
 
 
 // USAGE:   generalized function to make GET requests based on provided endpoint
@@ -109,11 +143,13 @@ function getObjects(endpoint, accessToken) {
 }
 
 
+
 // USAGE:   parses out and returns array of artist names from 'artists' object
 function parseArtistNames(artistList) {
     let listLength = artistList.artists.items.length;
-    let parsedNames = new Array(listLength);
+    if(listLength == 0){return []};
 
+    let parsedNames = new Array(listLength);
     var i;
     for (i = 0; i < listLength; i++) {
         let artist = artistList.artists.items[i];
@@ -137,8 +173,10 @@ function parseArtistNames(artistList) {
  *          with "day" precision > . < ||| 
  */
 function parseAlbums(albumList, date) {
+    let albumsLength = albumList.albums.items.length;
+    if(albumsLength == 0){ return []; }
+    
     let results = [];
-
     var i;
     for (i = 0; i < albumList.albums.items.length; i++) {
         let album = albumList.albums.items[i];
@@ -180,10 +218,6 @@ function createNotifications(artistName, parsedAlbums) {
     for (i = 0; i < parsedAlbums.length; i++) {
         let albumObj = parsedAlbums[i];
 
-        // create notification id
-        let id = `${albumObj.name}${albumObj.date}`;
-        id = id.replace(/\s/g, '');     // remove spaces
-
         let notification = {
             type: 'basic',
             iconUrl: `${albumObj.image_url}`,
@@ -197,10 +231,13 @@ function createNotifications(artistName, parsedAlbums) {
             notification.message = `new single released on ${albumObj.date}`
         }
 
-        // hash the albums' web URL to local storage by notification id
-        chrome.storage.local.set({ [id]: albumObj.web_url });
+        // hash the album's web URL to local storage by notification id
+        chrome.storage.local.set({ [i.toString()]: albumObj.web_url });
 
-        chrome.notifications.create(id, notification);
+        // this value is referenced when we want to remove the stored album URLs
+        chrome.storage.local.set({ lastNotificationID: parsedAlbums.length});
+
+        chrome.notifications.create(i.toString(), notification);
     }
 }
 
@@ -220,19 +257,3 @@ chrome.notifications.onClicked.addListener(function (notificationID) {
         console.log("removing album URL on click");
     });
 });
-
-
-
-// USAGE:   on notification close, remove stored album URL from local storage
-// NOTE:    
-chrome.notifications.onClosed.addListener(function (notificationID, byUser) {
-    console.log("trying to remove something...");
-
-    if (byUser) {
-        console.log(`removing ${notificationID} by user`);
-        chrome.storage.local.remove(notificationID);
-    }
-});
-
-
-
