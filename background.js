@@ -1,8 +1,8 @@
 
 'use strict';
 
-const clientID = "fluffy";
-const clientSecret = "fluffy";
+const clientID = "6ac1116fc2574cdc8523cd84d29074c1";
+const clientSecret = "5f103edb1dab40c19bb326fc2dc590ce";
 
 // USAGE:   reset storage and clear alarms upon installation setup 
 chrome.runtime.onInstalled.addListener(function () {
@@ -10,7 +10,6 @@ chrome.runtime.onInstalled.addListener(function () {
     chrome.storage.local.clear();
     chrome.alarms.clear("spot_notes");
 });
-
 
 
 // USAGE:   
@@ -275,10 +274,10 @@ chrome.alarms.onAlarm.addListener(function () {
 
         checkAccessToken(refreshToken).then(function () {
             checkArtistReleases();
+
         }).catch(function (err) {
             console.error(err);
         });
-
     });
 });
 

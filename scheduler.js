@@ -8,20 +8,29 @@
 
 'use strict';
 
-
 // USAGE:
 async function checkArtistReleases() {
     console.log("checking for new releases from followed artists ...");
 
-    removeOldAlbumURLs();
+    await removeOldAlbumURLs();
 
     let accessTokenPromise = await getAccessToken();
     let accessToken = accessTokenPromise.accessToken;
 
     // date handling
-    var today = new Date();                     // today's date in full format
-    var currentYear = today.getFullYear();      // YYYY
+    var today = new Date();
+    var currentYear = today.getFullYear();
     var today_date = new Date(currentYear, today.getMonth(), today.getDate());  // YYYY-MM-DD
+
+    // get time of last check
+    // if value does not exist, set to 7 days prior
+    let lastCheckDateTime = await getTimeOfLastCheck();
+
+    if(lastCheckDateTime.datetime != undefined){
+        lastCheckDateTime = lastCheckDateTime.datetime;
+    }else{
+        lastCheckDateTime = new Date(currentYear, today.getMonth(), today.getDate() - 7);
+    }
 
     // get complete list of names of followed artists
     let artists_endpoint = "https://api.spotify.com/v1/me/following?type=artist&limit=50";
@@ -37,33 +46,66 @@ async function checkArtistReleases() {
 
         // get complete list of albums by the artist for the current year
         let album_endpoint = `${search_endpoint}q="${name}"%20year:${currentYear}&type=album&limit=50`;
-        let parsed_albums = await makePaginatedCalls(album_endpoint, accessToken, parseAlbums, today_date);
+        let parsed_albums = await makePaginatedCalls(album_endpoint, accessToken, parseAlbums, today_date, lastCheckDateTime);
 
         if (parsed_albums.length > 0) {
             createNotifications(name, parsed_albums);
         }
     }
 
+    // set datetime of curent check
+    chrome.storage.local.set({ "lastCheckDateTime": `${today_date}` });
+
     console.log("completed check!");
 }
 
 
-
 // USAGE:   remove all locally-stored album URL values from last checkArtistRelease process
 function removeOldAlbumURLs(){
-    chrome.storage.local.get("lastNotificationID", function(value){
+    return new Promise(function (resolve, reject) {
+        
+        chrome.storage.local.get("lastNotificationID", function(value){
+            if(chrome.runtime.lastError || typeof value == "undefined"){
+                console.log("no previously defined value for lastNotificationID!");
+                return;
+            }
 
-        if(chrome.runtime.lastError || typeof value == "undefined"){
-            console.log("no previously defined value for lastNotificationID!");
-            return;
-        }
+            var i;
+            for(i = 0; i < value; i++){
+                chrome.notifications.clear(i.toString());
+                chrome.storage.local.remove(i.toString());
+            }
+           
+            console.log("removed all old album URLs...");
+            resolve();
+        });
+    });
+}
 
-        var i;
-        for(i = 0; i < value; i++){
-            chrome.storage.local.remove(i.toString());
-        }
-       
-        console.log("removed all old album URLs...");
+
+// USAGE:   returns access token from storage
+function getAccessToken() {
+    return new Promise(function (resolve, reject) {
+        chrome.storage.local.get("accessToken", function (resp) {
+            if (chrome.runtime.lastError) {
+                console.log("stored access token is shit ...");
+                reject();
+            }
+            resolve({ accessToken: resp.accessToken.access_token });
+        });
+    });
+}
+
+
+// USAGE:   returns the stored datetime of the last check as a string, 
+//          'undefined' if the value does not exist
+function getTimeOfLastCheck(){
+    return new Promise(function (resolve, reject) {
+        chrome.storage.local.get("lastCheckDateTime", function (resp) {
+            if(chrome.runtime.lastError) reject();
+            resp.lastCheckDateTime == "undefined"? resolve({datetime: ''}) : resolve({datetime: resp.lastCheckDateTime});
+
+        });
     });
 }
 
@@ -76,10 +118,11 @@ function removeOldAlbumURLs(){
  * @param {string}      endpoint        
  * @param {string}      accessToken     
  * @param {function}    parser          - relevant parser function for list object returned by GET
- * @param {Date}        today_date      - REQUIRED if your parser requires a Date parameter
+ * @param {Date}        today_date      - REQUIRED if your parser is 'parseAlbums( )'
+ * @param {string}      lastCheckDateTime   - REQUIRED if your parser is 'parseAlbums( )' 
  */
 
-async function makePaginatedCalls(endpoint, accessToken, parser, dateParam){
+async function makePaginatedCalls(endpoint, accessToken, parser, dateParam, lastCheckDateTime){
     let results = [];
 
     while(endpoint != null){
@@ -90,7 +133,7 @@ async function makePaginatedCalls(endpoint, accessToken, parser, dateParam){
             endpoint = itemList.artists.next;
 
         }else if(parser.name == "parseAlbums"){
-            results = results.concat(parser(itemList, dateParam));
+            results = results.concat(parser(itemList, dateParam, lastCheckDateTime));
             endpoint = itemList.albums.next;
 
         }
@@ -163,26 +206,29 @@ function parseArtistNames(artistList) {
 
 /**
  * USAGE:
- * @param {} albumList
- * @param {Date} date
+ * @param {list}    albumList
+ * @param {Date}    date
+ * @param {string}  lastCheckDateTime   - datetime of last performed check
  * 
  * NOTE:    from some testing, it seems that most album relase dates will have a "day" precision,
  *          however according to the documentation, this isn't necessary the case
- * 
- *          for now, I will ONLY create notifications for albums that have relase dates
- *          with "day" precision > . < ||| 
+ *          ---> for now, I will ONLY create notifications for albums that have relase dates
+ *          with "day" precision
  */
-function parseAlbums(albumList, date) {
+function parseAlbums(albumList, date, lastCheckDateTime) {
     let albumsLength = albumList.albums.items.length;
     if(albumsLength == 0){ return []; }
     
     let results = [];
+    var albumDate = '';
     var i;
     for (i = 0; i < albumList.albums.items.length; i++) {
         let album = albumList.albums.items[i];
 
         if (album.release_date_precision == "day") {
-            if (new Date(album.release_date) >= date) {
+            albumDate = new Date(album.release_date);
+
+            if(albumDate >= lastCheckDateTime && albumDate <= date){
 
                 // get URL of smallest album image
                 let albumImage = album.images[album.images.length - 1];
@@ -232,10 +278,10 @@ function createNotifications(artistName, parsedAlbums) {
         }
 
         // hash the album's web URL to local storage by notification id
-        chrome.storage.local.set({ [i.toString()]: albumObj.web_url });
+        chrome.storage.local.set({[i.toString()]: albumObj.web_url });
 
         // this value is referenced when we want to remove the stored album URLs
-        chrome.storage.local.set({ lastNotificationID: parsedAlbums.length});
+        chrome.storage.local.set({ "lastNotificationID": parsedAlbums.length});
 
         chrome.notifications.create(i.toString(), notification);
     }
@@ -244,16 +290,10 @@ function createNotifications(artistName, parsedAlbums) {
 
 // USAGE:   upon user click, open album URL in a new tab inside current window
 chrome.notifications.onClicked.addListener(function (notificationID) {
-    console.log(notificationID);
-
     chrome.storage.local.get(notificationID, function (albumURL) {
-        console.log(albumURL);
-        console.log(albumURL[notificationID]);
         chrome.tabs.create({ url: albumURL[notificationID] });
     });
 
     // remove stored album URL
-    chrome.storage.local.remove(notificationID, function () {
-        console.log("removing album URL on click");
-    });
+    chrome.storage.local.remove(notificationID);
 });
